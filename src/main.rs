@@ -1,11 +1,17 @@
-use anyhow::Result;
+use anyhow::{Error, Result, anyhow};
 use chrono::{DateTime, Local};
 use clap::Parser;
+use dirs::{config_dir, home_dir};
 use nanoid::nanoid;
-use std::{path::Path, sync::LazyLock, time::SystemTime};
+use serde::{Deserialize, Serialize};
+use std::{
+    path::{Path, PathBuf},
+    sync::LazyLock,
+    time::SystemTime,
+};
 use tokio::{
-    fs::{self, OpenOptions},
-    io::AsyncWriteExt,
+    fs::{self, File, OpenOptions},
+    io::{AsyncWriteExt, BufReader},
     process::Command,
     sync::Mutex,
 };
@@ -14,19 +20,54 @@ struct Cli {
     action: String,
     content: String,
 }
+
 static NOTE_DIR: LazyLock<Mutex<String>> =
     LazyLock::new(|| Mutex::new(String::from("D:/notes/note/")));
 #[tokio::main]
 async fn main() -> Result<()> {
+    init().await?;
     let args = Cli::parse();
 
     println!("{}: {}", args.action, args.content);
     match args.action.as_str() {
         "new" => write_note(&args.content).await?,
         "find" => find_note(&args.content).await?,
+        "change" => change_dir(args.content).await?,
         _ => {
             println!("Cant find that action.")
         }
+    }
+    Ok(())
+}
+async fn change_dir(input: String) -> Result<()> {
+    let config_file = config_dir().unwrap().join("note").join("config.txt");
+    let new_dir = Path::new(&input);
+    if !new_dir.exists() {
+        return Err(anyhow!("new dir is not exist"));
+    }
+    let _ = fs::write(config_file, new_dir.to_str().unwrap()).await;
+    Ok(())
+}
+fn default_dir() -> PathBuf {
+    home_dir().unwrap().join("notes")
+}
+async fn init() -> Result<()> {
+    let default_dir = default_dir().join("notes");
+    if default_dir.exists() {
+        let config = fs::read_to_string(&default_dir).await?;
+        if Path::new(&config).exists() {
+            return Ok(());
+        }
+        fs::create_dir_all(&config).await?;
+        return Ok(());
+    }
+    let config_dir = config_dir()
+        .ok_or_else(|| anyhow!("cant find config dir"))?
+        .join("note")
+        .join("config.txt");
+
+    if config_dir.exists() {
+        let _ = fs::write(config_dir.clone(), &default_dir.to_str().unwrap()).await;
     }
     Ok(())
 }
