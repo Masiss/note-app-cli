@@ -6,6 +6,7 @@ use nanoid::nanoid;
 use serde::{Deserialize, Serialize};
 use std::{
     path::{Path, PathBuf},
+    process::Output,
     sync::LazyLock,
     time::SystemTime,
 };
@@ -86,12 +87,20 @@ async fn write_note(note: &str) -> Result<()> {
 }
 async fn find_note(input: &str) -> Result<()> {
     let note_dir = NOTE_DIR.lock().await;
-    let note = Command::new("rg")
-        .arg("--files-with-matches")
-        .arg(input)
-        .current_dir(&*note_dir)
-        .output()
-        .await?;
+    let note: Output = if input == "all" {
+        Command::new("rg")
+            .arg("--files")
+            .current_dir(&*note_dir)
+            .output()
+            .await?
+    } else {
+        Command::new("rg")
+            .arg("--files-with-matches")
+            .arg(input)
+            .current_dir(&*note_dir)
+            .output()
+            .await?
+    };
     let output = String::from_utf8(note.stdout).unwrap();
     for filename in output.lines() {
         let note_path = Path::new(&*note_dir).join(filename);
